@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::http::DiscordUser;
-use crate::state::{save_settings, AppSettings};
+use crate::state::{save_settings, AppSettings, PresenceStatus};
 use crate::updater;
 
 fn avatar_url(user: &DiscordUser) -> Option<String> {
@@ -24,6 +24,7 @@ fn display_name(user: &DiscordUser) -> &str {
 enum SettingsTab {
     General,
     Appearance,
+    About,
 }
 
 #[component]
@@ -194,6 +195,26 @@ pub fn SettingsModal(
                             onclick: move |_| active_tab.set(SettingsTab::Appearance),
                             "Appearance"
                         }
+                        button {
+                            class: "settings-tab anim-btn",
+                            style: if active_tab() == SettingsTab::About {
+                                "
+                                    width: 100%; padding: 0.5rem 1rem; text-align: left;
+                                    background: rgba(0,255,245,0.1); color: #00fff5;
+                                    border: none; font-size: 0.9375rem; cursor: pointer;
+                                    border-left: 2px solid #00fff5;
+                                "
+                            } else {
+                                "
+                                    width: 100%; padding: 0.5rem 1rem; text-align: left;
+                                    background: transparent; color: #9ca3af;
+                                    border: none; font-size: 0.9375rem; cursor: pointer;
+                                    border-left: 2px solid transparent;
+                                "
+                            },
+                            onclick: move |_| active_tab.set(SettingsTab::About),
+                            "About"
+                        }
                     }
                 }
 
@@ -256,6 +277,150 @@ pub fn SettingsModal(
                                             },
                                         }
                                         span { style: "color: #e5e7eb; font-size: 0.9375rem;", "Show metrics overlay" }
+                                    }
+                                    // Presence + ghost typing
+                                    div {
+                                        style: "display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;",
+                                        span {
+                                            style: "color: #9ca3af; font-size: 0.875rem;",
+                                            "Presence status"
+                                        }
+                                        div {
+                                            style: "display: flex; flex-wrap: wrap; gap: 0.5rem;",
+                                            button {
+                                                class: "anim-btn",
+                                                style: if s.presence == PresenceStatus::Online {
+                                                    "
+                                                        padding: 0.25rem 0.75rem; font-size: 0.8125rem;
+                                                        border-radius: 999px;
+                                                        border: 1px solid rgba(0,255,245,0.8);
+                                                        background: rgba(0,255,245,0.12);
+                                                        color: #e5e7eb;
+                                                        cursor: pointer;
+                                                    "
+                                                } else {
+                                                    "
+                                                        padding: 0.25rem 0.75rem; font-size: 0.8125rem;
+                                                        border-radius: 999px;
+                                                        border: 1px solid rgba(255,255,255,0.12);
+                                                        background: transparent;
+                                                        color: #9ca3af;
+                                                        cursor: pointer;
+                                                    "
+                                                },
+                                                onclick: move |_| {
+                                                    let mut s = settings();
+                                                    s.presence = PresenceStatus::Online;
+                                                    settings.set(s.clone());
+                                                    let _ = save_settings(&s);
+                                                },
+                                                "Online"
+                                            }
+                                            button {
+                                                class: "anim-btn",
+                                                style: if s.presence == PresenceStatus::Idle {
+                                                    "
+                                                        padding: 0.25rem 0.75rem; font-size: 0.8125rem;
+                                                        border-radius: 999px;
+                                                        border: 1px solid rgba(0,255,245,0.8);
+                                                        background: rgba(0,255,245,0.12);
+                                                        color: #e5e7eb;
+                                                        cursor: pointer;
+                                                    "
+                                                } else {
+                                                    "
+                                                        padding: 0.25rem 0.75rem; font-size: 0.8125rem;
+                                                        border-radius: 999px;
+                                                        border: 1px solid rgba(255,255,255,0.12);
+                                                        background: transparent;
+                                                        color: #9ca3af;
+                                                        cursor: pointer;
+                                                    "
+                                                },
+                                                onclick: move |_| {
+                                                    let mut s = settings();
+                                                    s.presence = PresenceStatus::Idle;
+                                                    settings.set(s.clone());
+                                                    let _ = save_settings(&s);
+                                                },
+                                                "Idle"
+                                            }
+                                            button {
+                                                class: "anim-btn",
+                                                style: if s.presence == PresenceStatus::DoNotDisturb {
+                                                    "
+                                                        padding: 0.25rem 0.75rem; font-size: 0.8125rem;
+                                                        border-radius: 999px;
+                                                        border: 1px solid rgba(0,255,245,0.8);
+                                                        background: rgba(0,255,245,0.12);
+                                                        color: #e5e7eb;
+                                                        cursor: pointer;
+                                                    "
+                                                } else {
+                                                    "
+                                                        padding: 0.25rem 0.75rem; font-size: 0.8125rem;
+                                                        border-radius: 999px;
+                                                        border: 1px solid rgba(255,255,255,0.12);
+                                                        background: transparent;
+                                                        color: #9ca3af;
+                                                        cursor: pointer;
+                                                    "
+                                                },
+                                                onclick: move |_| {
+                                                    let mut s = settings();
+                                                    s.presence = PresenceStatus::DoNotDisturb;
+                                                    settings.set(s.clone());
+                                                    let _ = save_settings(&s);
+                                                },
+                                                "Do Not Disturb"
+                                            }
+                                            button {
+                                                class: "anim-btn",
+                                                style: if s.presence == PresenceStatus::Invisible {
+                                                    "
+                                                        padding: 0.25rem 0.75rem; font-size: 0.8125rem;
+                                                        border-radius: 999px;
+                                                        border: 1px solid rgba(0,255,245,0.8);
+                                                        background: rgba(0,255,245,0.12);
+                                                        color: #e5e7eb;
+                                                        cursor: pointer;
+                                                    "
+                                                } else {
+                                                    "
+                                                        padding: 0.25rem 0.75rem; font-size: 0.8125rem;
+                                                        border-radius: 999px;
+                                                        border: 1px solid rgba(255,255,255,0.12);
+                                                        background: transparent;
+                                                        color: #9ca3af;
+                                                        cursor: pointer;
+                                                    "
+                                                },
+                                                onclick: move |_| {
+                                                    let mut s = settings();
+                                                    s.presence = PresenceStatus::Invisible;
+                                                    settings.set(s.clone());
+                                                    let _ = save_settings(&s);
+                                                },
+                                                "Invisible"
+                                            }
+                                        }
+                                        label {
+                                            style: "display: flex; align-items: center; gap: 0.75rem; cursor: pointer;",
+                                            input {
+                                                r#type: "checkbox",
+                                                checked: "{s.ghost_typing}",
+                                                oninput: move |evt| {
+                                                    let mut s = settings();
+                                                    s.ghost_typing = evt.checked();
+                                                    settings.set(s.clone());
+                                                    let _ = save_settings(&s);
+                                                },
+                                            }
+                                            span {
+                                                style: "color: #e5e7eb; font-size: 0.9375rem;",
+                                                "Ghost typing (don't show typing indicator)"
+                                            }
+                                        }
                                     }
                                     div {
                                         style: "display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;",
@@ -351,6 +516,36 @@ pub fn SettingsModal(
                                     p {
                                         style: "margin: 0; color: #6b7280; font-size: 0.8125rem; line-height: 1.4;",
                                         "Transitions, fade effects, and hover animations."
+                                    }
+                                }
+                            }
+                        },
+                        SettingsTab::About => rsx! {
+                            div {
+                                style: "padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;",
+                                h3 {
+                                    style: "margin: 0; font-size: 1rem; color: #9ca3af;",
+                                    "About Velocity"
+                                }
+                                p {
+                                    style: "margin: 0; color: #e5e7eb; font-size: 0.9375rem; line-height: 1.5;",
+                                    "Velocity is a high-performance desktop Discord client focused on low RAM usage and a customizable cyberpunk/fintech-inspired UI."
+                                }
+                                div {
+                                    style: "display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;",
+                                    span {
+                                        style: "color: #9ca3af; font-size: 0.875rem;",
+                                        "Version: {crate::VERSION}"
+                                    }
+                                    a {
+                                        href: "https://github.com/lonestill/velocity-client",
+                                        target: "_blank",
+                                        rel: "noopener noreferrer",
+                                        style: "
+                                            color: #00fff5; font-size: 0.875rem;
+                                            text-decoration: none;
+                                        ",
+                                        "GitHub: lonestill/velocity-client"
                                     }
                                 }
                             }

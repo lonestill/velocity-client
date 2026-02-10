@@ -297,14 +297,21 @@ pub fn App() -> Element {
                         loading.set(false);
                     });
                 },
-                on_trigger_typing: move |channel_id: String| {
-                    let tok = match token() {
-                        Some(t) => t,
-                        None => return,
-                    };
-                    spawn(async move {
-                        let _ = http::trigger_typing(&tok, &channel_id).await;
-                    });
+                on_trigger_typing: {
+                    let settings_sig = settings;
+                    move |channel_id: String| {
+                        let tok = match token() {
+                            Some(t) => t,
+                            None => return,
+                        };
+                        // Respect ghost typing setting: when enabled, do not send typing events.
+                        if settings_sig().ghost_typing {
+                            return;
+                        }
+                        spawn(async move {
+                            let _ = http::trigger_typing(&tok, &channel_id).await;
+                        });
+                    }
                 },
                 on_open_friend: move |user_id: String| {
                     let tok = match token() {

@@ -61,6 +61,19 @@ pub fn logout() -> Result<(), String> {
     Ok(())
 }
 
+/// Preferred presence status for the user.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PresenceStatus {
+    #[serde(rename = "online")]
+    Online,
+    #[serde(rename = "idle")]
+    Idle,
+    #[serde(rename = "dnd")]
+    DoNotDisturb,
+    #[serde(rename = "invisible")]
+    Invisible,
+}
+
 /// Application settings persisted to disk.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -73,10 +86,20 @@ pub struct AppSettings {
     /// Enable UI animations (transitions, fade-in, etc).
     #[serde(default = "default_true")]
     pub animations_enabled: bool,
+    /// Preferred presence (online / idle / dnd / invisible).
+    #[serde(default = "default_presence")]
+    pub presence: PresenceStatus,
+    /// When true, do not send typing events ("ghost typing").
+    #[serde(default)]
+    pub ghost_typing: bool,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_presence() -> PresenceStatus {
+    PresenceStatus::Online
 }
 
 impl Default for AppSettings {
@@ -85,6 +108,8 @@ impl Default for AppSettings {
             show_metrics_overlay: false,
             welcome_seen: false,
             animations_enabled: true,
+            presence: PresenceStatus::Online,
+            ghost_typing: false,
         }
     }
 }
