@@ -1,5 +1,7 @@
 mod channel_list;
 mod context_menu;
+mod guild_channel_list;
+mod guild_member_list;
 mod layout;
 mod login_form;
 mod markdown;
@@ -12,6 +14,8 @@ mod user_card;
 mod welcome_modal;
 
 pub use channel_list::ChannelList;
+pub use guild_channel_list::GuildChannelList;
+pub use guild_member_list::GuildMemberList;
 pub use context_menu::{ChannelContextMenu, MessageContextMenu};
 pub use layout::Layout;
 pub use login_form::LoginForm;

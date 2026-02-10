@@ -1,7 +1,17 @@
 use dioxus::prelude::*;
 
 use crate::http::{DiscordUser, DmChannel, Relationship};
+use crate::state::PresenceStatus;
 use crate::ui::ChannelContextMenu;
+
+fn status_dot_color(s: PresenceStatus) -> &'static str {
+    match s {
+        PresenceStatus::Online => "#22c55e",
+        PresenceStatus::Idle => "#f59e0b",
+        PresenceStatus::DoNotDisturb => "#ef4444",
+        PresenceStatus::Invisible => "#6b7280",
+    }
+}
 
 fn display_name(u: &DiscordUser) -> String {
     u.global_name
@@ -28,12 +38,71 @@ fn dm_channel_label(ch: &DmChannel) -> String {
     }
 }
 
+/// Avatar with a small status dot (online=green, idle=yellow, dnd=red, invisible=gray).
+#[component]
+fn AvatarWithStatus(
+    avatar_url: Option<String>,
+    fallback: char,
+    status: PresenceStatus,
+) -> Element {
+    let avatar_block = avatar_url
+        .map(|url| {
+            rsx! {
+                img {
+                    src: "{url}",
+                    alt: "",
+                    style: "
+                        width: 1.75rem; height: 1.75rem;
+                        border-radius: 50%; object-fit: cover;
+                    ",
+                }
+            }
+        })
+        .unwrap_or_else(|| {
+            rsx! {
+                div {
+                    style: "
+                        width: 1.75rem; height: 1.75rem; border-radius: 50%;
+                        background: rgba(0,255,245,0.2);
+                        display: flex; align-items: center; justify-content: center;
+                        font-size: 0.65rem; font-weight: 600; color: #00fff5;
+                    ",
+                    "{fallback}"
+                }
+            }
+        });
+
+    let dot_color = status_dot_color(status);
+
+    rsx! {
+        div {
+            style: "
+                position: relative;
+                width: 1.75rem; height: 1.75rem;
+                flex-shrink: 0;
+            ",
+            {avatar_block}
+            div {
+                style: "
+                    position: absolute;
+                    right: -1px; bottom: -1px;
+                    width: 0.55rem; height: 0.55rem;
+                    border-radius: 999px;
+                    border: 2px solid #0b1120;
+                    background: {dot_color};
+                ",
+            }
+        }
+    }
+}
+
 #[component]
 pub fn ChannelList(
     friends: Signal<Vec<Relationship>>,
     dm_channels: Signal<Vec<DmChannel>>,
     selected_channel_id: Signal<Option<String>>,
     unread_counts: Signal<std::collections::HashMap<String, u32>>,
+    presence_map: Signal<std::collections::HashMap<String, PresenceStatus>>,
     on_select_channel: EventHandler<Option<String>>,
     on_open_friend: EventHandler<String>,
     on_mark_read: EventHandler<String>,
@@ -43,30 +112,45 @@ pub fn ChannelList(
     let dm_list = dm_channels();
     let selected = selected_channel_id();
     let unread = unread_counts();
-    let friends_filtered: Vec<(String, String, String, Option<String>)> = friends_list
-        .iter()
-        .filter(|r| r.r#type == 1)
-        .map(|r| {
-            (
-                r.user.id.clone(),
-                r.user.id.clone(),
-                display_name(&r.user),
-                avatar_url(&r.user),
-            )
-        })
-        .collect();
+    let presence = presence_map();
+    let friends_filtered: Vec<(String, String, String, Option<String>, PresenceStatus)> =
+        friends_list
+            .iter()
+            .filter(|r| r.r#type == 1)
+            .map(|r| {
+                let uid = r.user.id.clone();
+                let status = presence.get(&uid).copied().unwrap_or(PresenceStatus::Invisible);
+                (
+                    uid.clone(),
+                    uid,
+                    display_name(&r.user),
+                    avatar_url(&r.user),
+                    status,
+                )
+            })
+            .collect();
     let mut seen_dm_ids = std::collections::HashSet::new();
-    let dm_owned: Vec<(String, String, String, Option<String>, char)> = dm_list
+    let dm_owned: Vec<(String, String, String, Option<String>, char, PresenceStatus)> = dm_list
         .iter()
         .filter(|ch| seen_dm_ids.insert(ch.id.clone()))
         .map(|ch| {
             let label = dm_channel_label(ch);
-            let (avatar_opt, fallback) = ch
-                .recipients
-                .first()
-                .map(|u| (avatar_url(u), display_name(u).chars().next().unwrap_or('?')))
-                .unwrap_or((None, '?'));
-            (ch.id.clone(), ch.id.clone(), label, avatar_opt, fallback)
+            let (avatar_opt, fallback, status) = ch.recipients.first().map(|u| {
+                let sid = presence.get(&u.id).copied().unwrap_or(PresenceStatus::Invisible);
+                (
+                    avatar_url(u),
+                    display_name(u).chars().next().unwrap_or('?'),
+                    sid,
+                )
+            }).unwrap_or((None, '?', PresenceStatus::Invisible));
+            (
+                ch.id.clone(),
+                ch.id.clone(),
+                label,
+                avatar_opt,
+                fallback,
+                status,
+            )
         })
         .collect();
 
@@ -107,7 +191,7 @@ pub fn ChannelList(
                 style: "padding: 0.25rem 0.5rem; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280;",
                 "Friends"
             }
-            for (uid, uid_click, name, avatar_opt) in friends_filtered.clone().into_iter() {
+            for (uid, uid_click, name, avatar_opt, friend_status) in friends_filtered.clone().into_iter() {
                 li {
                     key: "friend-{uid}",
                     class: "anim-channel-item",
@@ -117,26 +201,11 @@ pub fn ChannelList(
                         color: #e5e7eb; font-size: 0.875rem; cursor: pointer;
                     ",
                     onclick: move |_| on_open_friend.call(uid_click.clone()),
-                    {match avatar_opt.as_ref() {
-                        Some(url) => rsx! {
-                            img {
-                                src: "{url}",
-                                alt: "",
-                                style: "width: 1.75rem; height: 1.75rem; border-radius: 50%; object-fit: cover;",
-                            }
-                        },
-                        None => rsx! {
-                            div {
-                                style: "
-                                    width: 1.75rem; height: 1.75rem; border-radius: 50%;
-                                    background: rgba(0,255,245,0.2);
-                                    display: flex; align-items: center; justify-content: center;
-                                    font-size: 0.65rem; font-weight: 600; color: #00fff5;
-                                ",
-                                "{name.chars().next().unwrap_or('?')}"
-                            }
-                        },
-                    }}
+                    AvatarWithStatus {
+                        avatar_url: avatar_opt.clone(),
+                        fallback: name.chars().next().unwrap_or('?'),
+                        status: friend_status,
+                    }
                     span {
                         style: "flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
                         title: "{name}",
@@ -149,7 +218,7 @@ pub fn ChannelList(
                 style: "padding: 0.25rem 0.5rem; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280;",
                 "Direct Messages"
             }
-            for (ch_id, ch_id_click, label, avatar_opt, fallback) in dm_owned.clone().into_iter() {
+            for (ch_id, ch_id_click, label, avatar_opt, fallback, dm_status) in dm_owned.clone().into_iter() {
                 li {
                     key: "dm-{ch_id}",
                     class: "anim-channel-item",
@@ -164,27 +233,11 @@ pub fn ChannelList(
                         let coords = evt.client_coordinates();
                         channel_context.set(Some((coords.x, coords.y, ch_id.clone())));
                     },
-                    {match avatar_opt.as_ref() {
-                        Some(url) => rsx! {
-                            img {
-                                src: "{url}",
-                                alt: "",
-                                style: "width: 1.75rem; height: 1.75rem; border-radius: 50%; object-fit: cover; flex-shrink: 0;",
-                            }
-                        },
-                        None => rsx! {
-                            div {
-                                style: "
-                                    width: 1.75rem; height: 1.75rem; border-radius: 50%;
-                                    background: rgba(0,255,245,0.2);
-                                    display: flex; align-items: center; justify-content: center;
-                                    font-size: 0.65rem; font-weight: 600; color: #00fff5;
-                                    flex-shrink: 0;
-                                ",
-                                "{fallback}"
-                            }
-                        },
-                    }}
+                    AvatarWithStatus {
+                        avatar_url: avatar_opt.clone(),
+                        fallback,
+                        status: dm_status,
+                    }
                     span {
                         style: "flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
                         title: "{label}",

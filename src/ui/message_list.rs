@@ -1,7 +1,7 @@
 use chrono::{DateTime, Datelike, Utc};
 use dioxus::prelude::*;
 
-use crate::http::{DiscordUser, DmChannel};
+use crate::http::{DiscordUser, DmChannel, GuildChannel};
 use crate::state::Message;
 use crate::ui::{MessageContextMenu, UserCard};
 
@@ -181,11 +181,18 @@ pub fn MessageList(
     messages: Signal<Vec<Message>>,
     selected_channel_id: Signal<Option<String>>,
     dm_channels: Signal<Vec<DmChannel>>,
+    guild_channels: Signal<Vec<GuildChannel>>,
     current_user: Signal<Option<DiscordUser>>,
+    current_voice_channel_id: Signal<Option<String>>,
+    current_voice_guild_id: Signal<Option<String>>,
     has_more_older: Signal<bool>,
     loading_older: Signal<bool>,
     loading_messages: Signal<bool>,
     typing_users: Signal<std::collections::HashMap<String, std::collections::HashMap<String, i64>>>,
+    access_denied_channel_ids: Signal<std::collections::HashSet<String>>,
+    channel_error_display: Signal<Option<(String, String)>>,
+    on_join_voice: EventHandler<(Option<String>, String)>,
+    on_leave_voice: EventHandler<()>,
     on_send_message: EventHandler<(String, String)>,
     on_load_older: EventHandler<(String, String)>,
     on_trigger_typing: EventHandler<String>,
@@ -193,15 +200,56 @@ pub fn MessageList(
     let mut user_card = use_signal(|| None::<(DiscordUser, f64, f64, bool)>);
     let mut context_menu = use_signal(|| None::<(f64, f64, String)>);
     let mut last_typing_trigger = use_signal(|| 0i64);
+    const GUILD_PRIVATE_THREAD: i32 = 12;
+
     let list = messages();
     let selected = selected_channel_id();
     let channels = dm_channels();
+    let guild_chs = guild_channels();
+    let access_denied = access_denied_channel_ids();
+    let channel_error = channel_error_display();
     let current_user_id: Option<String> = current_user().as_ref().map(|u| u.id.clone());
-    let header_title = selected
+
+    let is_private_channel = selected.as_ref().and_then(|sid| {
+        guild_chs.iter().find(|c| c.id == *sid).map(|c| {
+            c.r#type == GUILD_PRIVATE_THREAD || access_denied.contains(sid)
+        })
+    }).unwrap_or(false);
+
+    let private_debug: Option<(String, String, i32, String)> = (is_private_channel && selected.is_some()).then(|| {
+        let sid = selected.as_ref().unwrap();
+        let ch = guild_chs.iter().find(|c| c.id == *sid);
+        let (name, ch_type) = ch
+            .map(|c| (c.name.clone(), c.r#type))
+            .unwrap_or_else(|| ("?".to_string(), 0));
+        let err = channel_error
+            .as_ref()
+            .filter(|(id, _)| id == sid)
+            .map(|(_, e)| e.clone())
+            .unwrap_or_else(|| "No error message".to_string());
+        (sid.clone(), name, ch_type, err)
+    });
+
+    let header_icon = if is_private_channel { "🔒" } else { "💬" };
+    let header_title = if let Some(sel_id) = selected.as_ref() {
+        if let Some(dm) = channels.iter().find(|c| c.id == *sel_id) {
+            dm_channel_title(dm)
+        } else if let Some(gc) = guild_chs.iter().find(|c| c.id == *sel_id) {
+            format!("#{}", gc.name)
+        } else {
+            "Select a chat".to_string()
+        }
+    } else {
+        "Select a chat".to_string()
+    };
+
+    let is_dm_selected = selected
         .as_ref()
-        .and_then(|id| channels.iter().find(|c| c.id == *id))
-        .map(dm_channel_title)
-        .unwrap_or_else(|| "Select a chat".to_string());
+        .and_then(|sel_id| channels.iter().find(|c| c.id == *sel_id))
+        .is_some();
+    let dm_call_connected = is_dm_selected
+        && selected.as_ref() == current_voice_channel_id().as_ref()
+        && current_voice_guild_id().is_none();
 
     let mut draft = use_signal(|| String::new());
     let can_send = selected.is_some() && !draft().trim().is_empty();
@@ -252,7 +300,39 @@ pub fn MessageList(
         });
     });
 
-    let messages_content = if loading_msgs {
+    let messages_content = if let Some((ref ch_id, ref ch_name, ch_type, ref err)) = private_debug {
+        rsx! {
+            div {
+                style: "
+                    flex: 1; display: flex; flex-direction: column;
+                    align-items: center; justify-content: center;
+                    padding: 2rem; text-align: center;
+                    background: #0a0a0f; color: #9ca3af;
+                ",
+                div {
+                    style: "font-size: 3rem; margin-bottom: 1rem; opacity: 0.7;",
+                    "🔒"
+                }
+                h2 {
+                    style: "font-size: 1.25rem; font-weight: 600; color: #e5e7eb; margin: 0 0 0.5rem 0;",
+                    "This channel is private"
+                }
+                p {
+                    style: "font-size: 0.9375rem; margin: 0 0 1rem 0; max-width: 24rem;",
+                    "Only users with the right server permissions can see it."
+                }
+                pre {
+                    style: "
+                        text-align: left; font-size: 0.75rem;
+                        background: rgba(0,0,0,0.3); padding: 1rem;
+                        border-radius: 8px; overflow-x: auto;
+                        color: #6b7280; margin: 0;
+                    ",
+                    "channel_id: {ch_id}\nname: {ch_name}\ntype: {ch_type}\nerror: {err}"
+                }
+            }
+        }
+    } else if loading_msgs {
         rsx! {
             div {
                 style: "
@@ -362,8 +442,34 @@ pub fn MessageList(
             style: "flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden;",
             header {
                 style: "flex-shrink: 0; padding: 0.75rem 1rem; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 0.5rem;",
-                span { style: "color: #00fff5;", "💬" }
+                span { style: "color: #00fff5;", "{header_icon}" }
                 span { style: "font-weight: 500;", "{header_title}" }
+                if is_dm_selected {
+                    div { style: "margin-left: auto; display: flex; align-items: center; gap: 0.5rem;",
+                        button {
+                            class: "anim-btn",
+                            style: "
+                                padding: 0.35rem 0.65rem;
+                                border-radius: 8px;
+                                border: 1px solid rgba(255,255,255,0.12);
+                                background: rgba(255,255,255,0.06);
+                                color: #e5e7eb;
+                                font-size: 0.85rem;
+                                cursor: pointer;
+                            ",
+                            onclick: move |_| {
+                                if let Some(sel_id) = selected.as_ref() {
+                                    if dm_call_connected {
+                                        on_leave_voice.call(());
+                                    } else {
+                                        on_join_voice.call((None, sel_id.clone()));
+                                    }
+                                }
+                            },
+                            if dm_call_connected { "Leave call" } else { "Call" }
+                        }
+                    }
+                }
             }
             div {
                 id: "message-list-scroll",
@@ -371,7 +477,7 @@ pub fn MessageList(
                 style: "flex: 1 1 0; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; align-items: stretch;",
                 {messages_content}
             }
-            if selected_channel_id().is_some() {
+            if selected_channel_id().is_some() && private_debug.is_none() {
                 div {
                     style: "
                         flex-shrink: 0;

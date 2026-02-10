@@ -27,4 +27,16 @@
 
 ---
 
+## Голосовые каналы (опционально)
+
+Поддержка войс-чатов на серверах реализована через библиотеку [Songbird](https://github.com/serenity-rs/songbird). Сборка с голосом требует feature и нативные зависимости (Opus, CMake):
+
+```bash
+cargo build --features voice
+```
+
+На Windows для сборки с голосом нужен [Opus](https://opus-codec.org/) (например, через vcpkg: `vcpkg install opus`) и CMake. Без feature `voice` клиент собирается и работает как раньше, без кнопок Join/Leave в списке каналов.
+
+---
+
 *Velocity — один бинарник, быстрый старт, ~30 МБ RAM.*

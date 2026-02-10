@@ -3,6 +3,8 @@ use dioxus::prelude::*;
 use crate::http::DiscordUser;
 use crate::state::{save_settings, AppSettings, PresenceStatus};
 use crate::updater;
+#[cfg(feature = "voice")]
+use crate::voice_audio;
 
 fn avatar_url(user: &DiscordUser) -> Option<String> {
     user.avatar.as_ref().map(|hash| {
@@ -23,6 +25,8 @@ fn display_name(user: &DiscordUser) -> &str {
 #[derive(Clone, Copy, PartialEq)]
 enum SettingsTab {
     General,
+    #[cfg(feature = "voice")]
+    Voice,
     Appearance,
     About,
 }
@@ -52,9 +56,49 @@ pub fn SettingsModal(
 
     let mut active_tab = use_signal(|| SettingsTab::General);
     let mut update_available = use_signal(|| None::<String>);
+    #[cfg(feature = "voice")]
+    let mut input_devices = use_signal(|| Vec::<String>::new());
+    #[cfg(feature = "voice")]
+    let mut output_devices = use_signal(|| Vec::<String>::new());
     let s = settings();
+
+    #[cfg(feature = "voice")]
+    use_effect(move || {
+        if open() && active_tab() == SettingsTab::Voice {
+            let input = voice_audio::list_input_devices();
+            let output = voice_audio::list_output_devices();
+            input_devices.set(input);
+            output_devices.set(output);
+        }
+    });
     let user = current_user();
     let is_closing = closing();
+
+    #[cfg(feature = "voice")]
+    let voice_tab_btn = rsx! {
+        button {
+            class: "settings-tab anim-btn",
+            style: if active_tab() == SettingsTab::Voice {
+                "
+                    width: 100%; padding: 0.5rem 1rem; text-align: left;
+                    background: rgba(0,255,245,0.1); color: #00fff5;
+                    border: none; font-size: 0.9375rem; cursor: pointer;
+                    border-left: 2px solid #00fff5;
+                "
+            } else {
+                "
+                    width: 100%; padding: 0.5rem 1rem; text-align: left;
+                    background: transparent; color: #9ca3af;
+                    border: none; font-size: 0.9375rem; cursor: pointer;
+                    border-left: 2px solid transparent;
+                "
+            },
+            onclick: move |_| active_tab.set(SettingsTab::Voice),
+            "Voice"
+        }
+    };
+    #[cfg(not(feature = "voice"))]
+    let voice_tab_btn = rsx! {};
 
     rsx! {
         div {
@@ -196,6 +240,7 @@ pub fn SettingsModal(
                             onclick: move |_| active_tab.set(SettingsTab::Appearance),
                             "Appearance"
                         }
+                        {voice_tab_btn}
                         button {
                             class: "settings-tab anim-btn",
                             style: if active_tab() == SettingsTab::About {
@@ -426,6 +471,23 @@ pub fn SettingsModal(
                                                 "Ghost typing (don't show typing indicator)"
                                             }
                                         }
+                                        label {
+                                            style: "display: flex; align-items: center; gap: 0.75rem; cursor: pointer;",
+                                            input {
+                                                r#type: "checkbox",
+                                                checked: "{s.show_private_channels}",
+                                                oninput: move |evt| {
+                                                    let mut s = settings();
+                                                    s.show_private_channels = evt.checked();
+                                                    settings.set(s.clone());
+                                                    let _ = save_settings(&s);
+                                                },
+                                            }
+                                            span {
+                                                style: "color: #e5e7eb; font-size: 0.9375rem;",
+                                                "Show private channels (lock icon; only for users with server permissions)"
+                                            }
+                                        }
                                     }
                                     div {
                                         style: "display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;",
@@ -489,6 +551,93 @@ pub fn SettingsModal(
                                                     });
                                                 },
                                                 "Update to v{ver}"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        #[cfg(feature = "voice")]
+                        SettingsTab::Voice => {
+                            let input_devs = input_devices();
+                            let output_devs = output_devices();
+                            let input_val = s.voice_input_device.as_deref().unwrap_or("(Default)");
+                            let output_val = s.voice_output_device.as_deref().unwrap_or("(Default)");
+                            rsx! {
+                                div {
+                                    style: "padding: 1.5rem;",
+                                    h3 {
+                                        style: "margin: 0 0 1rem 0; font-size: 1rem; color: #9ca3af;",
+                                        "Voice devices"
+                                    }
+                                    div {
+                                        style: "display: flex; flex-direction: column; gap: 1rem;",
+                                        div {
+                                            style: "display: flex; flex-direction: column; gap: 0.5rem;",
+                                            label {
+                                                style: "color: #9ca3af; font-size: 0.875rem;",
+                                                "Microphone (input)"
+                                            }
+                                            select {
+                                                style: "
+                                                    padding: 0.5rem 0.75rem; font-size: 0.9375rem;
+                                                    background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15);
+                                                    border-radius: 6px; color: #e5e7eb;
+                                                    max-width: 20rem;
+                                                ",
+                                                value: "{input_val}",
+                                                oninput: move |evt| {
+                                                    let val = evt.value().trim().to_string();
+                                                    let mut s = settings();
+                                                    s.voice_input_device = if val.is_empty() || val == "(Default)" {
+                                                        None
+                                                    } else {
+                                                        Some(val)
+                                                    };
+                                                    settings.set(s.clone());
+                                                    let _ = save_settings(&s);
+                                                },
+                                                for name in input_devs.iter() {
+                                                    option {
+                                                        value: "{name}",
+                                                        selected: name.as_str() == input_val,
+                                                        "{name}"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        div {
+                                            style: "display: flex; flex-direction: column; gap: 0.5rem;",
+                                            label {
+                                                style: "color: #9ca3af; font-size: 0.875rem;",
+                                                "Speaker (output)"
+                                            }
+                                            select {
+                                                style: "
+                                                    padding: 0.5rem 0.75rem; font-size: 0.9375rem;
+                                                    background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15);
+                                                    border-radius: 6px; color: #e5e7eb;
+                                                    max-width: 20rem;
+                                                ",
+                                                value: "{output_val}",
+                                                oninput: move |evt| {
+                                                    let val = evt.value().trim().to_string();
+                                                    let mut s = settings();
+                                                    s.voice_output_device = if val.is_empty() || val == "(Default)" {
+                                                        None
+                                                    } else {
+                                                        Some(val)
+                                                    };
+                                                    settings.set(s.clone());
+                                                    let _ = save_settings(&s);
+                                                },
+                                                for name in output_devs.iter() {
+                                                    option {
+                                                        value: "{name}",
+                                                        selected: name.as_str() == output_val,
+                                                        "{name}"
+                                                    }
+                                                }
                                             }
                                         }
                                     }

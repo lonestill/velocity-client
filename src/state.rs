@@ -92,6 +92,15 @@ pub struct AppSettings {
     /// When true, do not send typing events ("ghost typing").
     #[serde(default)]
     pub ghost_typing: bool,
+    /// When true, show private/restricted channels in server list (with lock icon).
+    #[serde(default)]
+    pub show_private_channels: bool,
+    /// Voice: preferred input device name (microphone). None = default.
+    #[serde(default)]
+    pub voice_input_device: Option<String>,
+    /// Voice: preferred output device name (speaker). None = default.
+    #[serde(default)]
+    pub voice_output_device: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -110,6 +119,9 @@ impl Default for AppSettings {
             animations_enabled: true,
             presence: PresenceStatus::Online,
             ghost_typing: false,
+            show_private_channels: false,
+            voice_input_device: None,
+            voice_output_device: None,
         }
     }
 }

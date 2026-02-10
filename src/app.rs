@@ -1,15 +1,20 @@
 use dioxus::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc;
 
-use crate::gateway;
-use crate::http::{self, DiscordUser, DmChannel, Relationship};
-use crate::state::{load_settings, load_token, login, logout, Guild, Message, PresenceStatus};
+use crate::gateway::{self, VoiceCommand, VoiceMessage};
+use crate::http::{self, ApiGuild, DiscordUser, DmChannel, GuildChannel, GuildMember, Relationship};
+use crate::state::{load_settings, load_token, login, logout, Message, PresenceStatus};
 use crate::ui::{Layout, LoginForm, MetricsOverlay, SettingsModal, ToastContainer, WelcomeModal};
+#[cfg(feature = "voice")]
+use crate::voice;
 
 #[component]
 pub fn App() -> Element {
-    let guilds = use_signal(|| Vec::<Guild>::new());
+    let mut guilds = use_signal(|| Vec::<ApiGuild>::new());
+    let mut selected_guild_id = use_signal(|| None::<String>);
+    let mut guild_channels = use_signal(|| Vec::<GuildChannel>::new());
+    let mut guild_members = use_signal(|| Vec::<GuildMember>::new());
     let mut token = use_signal(|| load_token());
     let mut current_user = use_signal(|| None::<DiscordUser>);
     let mut friends = use_signal(|| Vec::<Relationship>::new());
@@ -28,8 +33,14 @@ pub fn App() -> Element {
     let mut toast_counter = use_signal(|| 0usize);
     let mut unread_counts = use_signal(|| HashMap::<String, u32>::new());
     let typing_users = use_signal(|| HashMap::<String, std::collections::HashMap<String, i64>>::new());
+    let mut access_denied_channel_ids = use_signal(|| HashSet::<String>::new());
+    let mut channel_error_display = use_signal(|| None::<(String, String)>);
     // Channel to push presence updates (status) to the Gateway task.
     let mut presence_tx = use_signal(|| None::<mpsc::UnboundedSender<PresenceStatus>>);
+    let mut presence_map = use_signal(|| HashMap::<String, PresenceStatus>::new());
+    let mut current_voice_channel_id = use_signal(|| None::<String>);
+    let mut current_voice_guild_id = use_signal(|| None::<String>);
+    let mut voice_cmd_tx = use_signal(|| None::<mpsc::UnboundedSender<VoiceCommand>>);
 
     use_effect(move || {
         let tok = token();
@@ -56,8 +67,31 @@ pub fn App() -> Element {
                 if let Ok(list) = http::get_dm_channels(&t).await {
                     dm_channels.set(list);
                 }
+                if let Ok(list) = http::get_user_guilds(&t).await {
+                    guilds.set(list);
+                }
             });
         }
+    });
+
+    use_effect(move || {
+        let tok = token();
+        let gid = selected_guild_id();
+        if tok.is_none() || gid.is_none() {
+            guild_channels.set(Vec::new());
+            guild_members.set(Vec::new());
+            return;
+        }
+        let t = tok.unwrap();
+        let gid = gid.unwrap();
+        spawn(async move {
+            if let Ok(chs) = http::get_guild_channels(&t, &gid).await {
+                guild_channels.set(chs);
+            }
+            if let Ok(mems) = http::get_guild_members(&t, &gid, 100).await {
+                guild_members.set(mems);
+            }
+        });
     });
 
     // Gateway: spawn when logged in, receive real-time messages and typing.
@@ -65,23 +99,49 @@ pub fn App() -> Element {
     let mut gateway_spawned = use_signal(|| None::<String>);
     use_effect(move || {
         let tok = token();
-        if tok.is_none() {
-            gateway_spawned.set(None);
-            presence_tx.set(None);
+        let user = current_user();
+        if tok.is_none() || user.is_none() {
+            if tok.is_none() {
+                gateway_spawned.set(None);
+                presence_tx.set(None);
+            }
             return;
         }
         let t = tok.unwrap();
-        if gateway_spawned().as_ref() == Some(&t) {
+        let uid = user.as_ref().map(|u| u.id.clone()).unwrap_or_default();
+        // Only (re)spawn when token or user id changes (user id needed for voice/presence).
+        if gateway_spawned().as_ref() == Some(&uid) {
             return;
         }
-        gateway_spawned.set(Some(t.clone()));
+        gateway_spawned.set(Some(uid.clone()));
         let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
         let (tx_typing, mut rx_typing) = mpsc::unbounded_channel::<(String, String)>();
         let (tx_presence, rx_presence) = mpsc::unbounded_channel::<PresenceStatus>();
-        // Store sender so Settings UI can push live status updates.
+        let (tx_presence_updates, mut rx_presence_updates) =
+            mpsc::unbounded_channel::<(String, String)>();
         presence_tx.set(Some(tx_presence.clone()));
+        let (tx_voice_cmd, rx_voice_cmd) = mpsc::unbounded_channel::<VoiceCommand>();
+        let (tx_voice_message, mut rx_voice_message) = mpsc::unbounded_channel::<VoiceMessage>();
+        voice_cmd_tx.set(Some(tx_voice_cmd.clone()));
+        let current_user_id = Some(uid);
         let initial_presence = settings().presence;
-        gateway::spawn_gateway(t.clone(), tx, Some(tx_typing), initial_presence, rx_presence);
+        gateway::spawn_gateway(
+            t.clone(),
+            current_user_id,
+            tx,
+            Some(tx_typing),
+            Some(tx_presence_updates),
+            initial_presence,
+            rx_presence,
+            rx_voice_cmd,
+            tx_voice_message,
+        );
+        #[cfg(feature = "voice")]
+        voice::spawn_voice_task(rx_voice_message);
+        #[cfg(not(feature = "voice"))]
+        spawn(async move {
+            while rx_voice_message.recv().await.is_some() {}
+        });
         let mut msgs_sig = messages;
         let sel_sig = selected_channel_id;
         let mut unread_sig = unread_counts;
@@ -113,6 +173,21 @@ pub fn App() -> Element {
                 typing_sig.set(map);
             }
         });
+        let mut presence_sig = presence_map;
+        spawn(async move {
+            while let Some((user_id, status_str)) = rx_presence_updates.recv().await {
+                let status = match status_str.as_str() {
+                    "online" => PresenceStatus::Online,
+                    "idle" => PresenceStatus::Idle,
+                    "dnd" => PresenceStatus::DoNotDisturb,
+                    _ => PresenceStatus::Invisible,
+                };
+                eprintln!("[presence app] user_id={} status={} -> {:?}", user_id, status_str, status);
+                let mut map = presence_sig();
+                map.insert(user_id, status);
+                presence_sig.set(map);
+            }
+        });
     });
 
     use_effect(move || {
@@ -123,13 +198,20 @@ pub fn App() -> Element {
         let mut loading = loading_messages;
         let mut toast = toast_messages;
         let mut counter = toast_counter;
+        let mut access_denied = access_denied_channel_ids;
+        let mut channel_error = channel_error_display;
         if let (Some(t), Some(cid)) = (tok, ch_id) {
             messages.set(Vec::new());
             has_more_older.set(false);
             loading_messages.set(true);
+            channel_error_display.set(None);
             spawn(async move {
                 match http::fetch_channel_messages(&t, &cid, 50).await {
                     Ok(api_msgs) => {
+                        let mut den = access_denied();
+                        den.remove(&cid);
+                        access_denied.set(den);
+                        channel_error.set(None);
                         let msgs: Vec<Message> = api_msgs
                             .into_iter()
                             .map(|m| Message {
@@ -151,6 +233,13 @@ pub fn App() -> Element {
                     Err(e) => {
                         has_more.set(false);
                         msgs_signal.set(Vec::new());
+                        let is_forbidden = e.contains("403");
+                        if is_forbidden {
+                            let mut den = access_denied();
+                            den.insert(cid.clone());
+                            access_denied.set(den);
+                            channel_error.set(Some((cid.clone(), e.clone())));
+                        }
                         let id = counter() + 1;
                         counter.set(id);
                         let mut t = toast();
@@ -178,6 +267,9 @@ pub fn App() -> Element {
         rsx! {
             Layout {
                 guilds,
+                selected_guild_id,
+                guild_channels,
+                guild_members,
                 friends,
                 dm_channels,
                 messages,
@@ -189,6 +281,15 @@ pub fn App() -> Element {
                 settings,
                 unread_counts,
                 typing_users,
+                access_denied_channel_ids,
+                channel_error_display,
+                presence_map,
+                current_voice_channel_id,
+                current_voice_guild_id,
+                on_select_guild: move |id: Option<String>| {
+                    selected_guild_id.set(id);
+                    selected_channel_id.set(None);
+                },
                 on_select_channel: move |id: Option<String>| {
                     if let Some(ref cid) = id {
                         let mut counts = unread_counts();
@@ -196,6 +297,28 @@ pub fn App() -> Element {
                         unread_counts.set(counts);
                     }
                     selected_channel_id.set(id);
+                },
+                on_join_voice: move |(guild_id, channel_id): (Option<String>, String)| {
+                    if let Some(ref tx) = voice_cmd_tx() {
+                        let s = settings();
+                        let _ = tx.send(VoiceCommand::Join {
+                            guild_id: guild_id.clone(),
+                            channel_id: channel_id.clone(),
+                            self_mute: false,
+                            self_deaf: false,
+                            input_device: s.voice_input_device.clone(),
+                            output_device: s.voice_output_device.clone(),
+                        });
+                        current_voice_guild_id.set(guild_id);
+                        current_voice_channel_id.set(Some(channel_id));
+                    }
+                },
+                on_leave_voice: move |_| {
+                    if let Some(ref tx) = voice_cmd_tx() {
+                        let _ = tx.send(VoiceCommand::Leave);
+                        current_voice_channel_id.set(None);
+                        current_voice_guild_id.set(None);
+                    }
                 },
                 on_send_message: move |arg: (String, String)| {
                     let (channel_id, content) = arg;
@@ -345,6 +468,10 @@ pub fn App() -> Element {
                     current_user.set(None);
                     friends.set(Vec::new());
                     dm_channels.set(Vec::new());
+                    guilds.set(Vec::new());
+                    selected_guild_id.set(None);
+                    guild_channels.set(Vec::new());
+                    guild_members.set(Vec::new());
                     selected_channel_id.set(None);
                 },
                 on_open_settings: move |_| settings_open.set(true),

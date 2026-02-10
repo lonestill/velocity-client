@@ -39,6 +39,42 @@ pub struct Relationship {
     pub user: DiscordUser,
 }
 
+/// Guild (server) from GET /users/@me/guilds.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ApiGuild {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+}
+
+/// Guild channel from GET /guilds/{id}/channels. type: 0=text, 2=voice, 4=category.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct GuildChannel {
+    pub id: String,
+    #[serde(default)]
+    pub guild_id: Option<String>,
+    pub name: String,
+    #[serde(default)]
+    pub r#type: i32,
+    #[serde(default)]
+    pub parent_id: Option<String>,
+}
+
+/// Guild member from GET /guilds/{id}/members.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct GuildMember {
+    #[serde(default)]
+    pub user: Option<DiscordUser>,
+    #[serde(default)]
+    pub nick: Option<String>,
+    #[serde(default)]
+    pub roles: Vec<String>,
+}
+
 /// DM or Group DM channel — GET /users/@me/channels.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -104,6 +140,63 @@ pub async fn get_relationships(token: &str) -> Result<Vec<Relationship>, String>
         return Ok(Vec::new());
     }
     let list: Vec<Relationship> = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(list)
+}
+
+/// Get guilds (servers) the user is in. GET /users/@me/guilds.
+pub async fn get_user_guilds(token: &str) -> Result<Vec<ApiGuild>, String> {
+    let client = api_client()?;
+    let resp = client
+        .get(format!("{API_BASE}/users/@me/guilds"))
+        .header("Authorization", token.trim())
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Ok(Vec::new());
+    }
+    let list: Vec<ApiGuild> = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(list)
+}
+
+/// Get channels in a guild. GET /guilds/{guild_id}/channels.
+pub async fn get_guild_channels(token: &str, guild_id: &str) -> Result<Vec<GuildChannel>, String> {
+    let client = api_client()?;
+    let resp = client
+        .get(format!("{API_BASE}/guilds/{guild_id}/channels"))
+        .header("Authorization", token.trim())
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error {}: {}", status, body));
+    }
+    let list: Vec<GuildChannel> = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(list)
+}
+
+/// Get members in a guild. GET /guilds/{guild_id}/members. Limit 1-1000.
+pub async fn get_guild_members(
+    token: &str,
+    guild_id: &str,
+    limit: u32,
+) -> Result<Vec<GuildMember>, String> {
+    let client = api_client()?;
+    let resp = client
+        .get(format!("{API_BASE}/guilds/{guild_id}/members"))
+        .query(&[("limit", limit)])
+        .header("Authorization", token.trim())
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error {}: {}", status, body));
+    }
+    let list: Vec<GuildMember> = resp.json().await.map_err(|e| e.to_string())?;
     Ok(list)
 }
 
@@ -214,7 +307,7 @@ pub async fn send_message(
     token: &str,
     channel_id: &str,
     content: &str,
-) -> Result<ApiMessage, String> {
+) -> Result<ApiMessage, String> { 
     let client = api_client()?;
     let body = serde_json::json!({ "content": content });
     let resp = client

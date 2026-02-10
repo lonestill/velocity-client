@@ -4,6 +4,10 @@ mod http;
 mod state;
 mod ui;
 mod updater;
+#[cfg(feature = "voice")]
+mod voice;
+#[cfg(feature = "voice")]
+mod voice_audio;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

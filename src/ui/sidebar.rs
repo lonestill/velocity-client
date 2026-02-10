@@ -1,7 +1,6 @@
 use dioxus::prelude::*;
 
-use crate::http::DiscordUser;
-use crate::state::Guild;
+use crate::http::{ApiGuild, DiscordUser};
 
 /// Logo as base64 data URL — works with both cargo run and dx serve
 fn logo_src() -> &'static str {
@@ -29,16 +28,115 @@ fn display_name(user: &DiscordUser) -> &str {
         .unwrap_or(user.username.as_str())
 }
 
+fn guild_icon_url(guild: &ApiGuild) -> Option<String> {
+    guild.icon.as_ref().map(|hash| {
+        let ext = if hash.starts_with("a_") { "gif" } else { "png" };
+        format!(
+            "https://cdn.discordapp.com/icons/{}/{}.{}",
+            guild.id, hash, ext
+        )
+    })
+}
+
+/// Precomputed guild button to avoid .id in rsx.
+struct GuildButtonEntry {
+    gid: String,
+    name: String,
+    bg: &'static str,
+    border: &'static str,
+    letter: char,
+    icon_url: Option<String>,
+}
+
+#[component]
+fn GuildButton(
+    gid: String,
+    name: String,
+    bg: &'static str,
+    border: &'static str,
+    letter: char,
+    icon_url: Option<String>,
+    on_select_guild: EventHandler<Option<String>>,
+) -> Element {
+    let content = icon_url
+        .as_ref()
+        .map(|url| {
+            rsx! {
+                img {
+                    src: "{url}",
+                    alt: "",
+                    style: "
+                        width: 2.1rem; height: 2.1rem;
+                        border-radius: 50%; object-fit: cover;
+                    ",
+                }
+            }
+        })
+        .unwrap_or_else(|| {
+            rsx! {
+                span {
+                    style: "font-size: 0.9rem; font-weight: 600;",
+                    "{letter}"
+                }
+            }
+        });
+
+    rsx! {
+        button {
+            key: "{gid}",
+            class: "anim-btn",
+            style: "
+                width: 2.5rem; height: 2.5rem; border-radius: 50%;
+                background: {bg};
+                border: 1px solid {border};
+                color: #d1d5db; cursor: pointer; font-size: 0.75rem;
+                display: flex; align-items: center; justify-content: center;
+            ",
+            title: "{name}",
+            onclick: move |_| on_select_guild.call(Some(gid.clone())),
+            {content}
+        }
+    }
+}
+
 #[component]
 pub fn Sidebar(
-    guilds: Signal<Vec<Guild>>,
+    guilds: Signal<Vec<ApiGuild>>,
+    selected_guild_id: Signal<Option<String>>,
+    on_select_guild: EventHandler<Option<String>>,
     current_user: Signal<Option<DiscordUser>>,
     on_logout: EventHandler<()>,
     on_open_settings: EventHandler<()>,
 ) -> Element {
     let list = guilds();
+    let selected = selected_guild_id();
     let user = current_user();
     let logo = logo_src();
+
+    let guild_buttons: Vec<GuildButtonEntry> = list
+        .iter()
+        .take(10)
+        .map(|g| {
+            let gid = g.id.clone();
+            let name = g.name.clone();
+            let is_sel = selected.as_ref() == Some(&g.id);
+            let (bg, border) = if is_sel {
+                ("rgba(0,255,245,0.25)", "rgba(0,255,245,0.4)")
+            } else {
+                ("rgba(255,255,255,0.1)", "transparent")
+            };
+            let letter = name.chars().next().unwrap_or('?');
+             let icon_url = guild_icon_url(g);
+            GuildButtonEntry {
+                gid,
+                name,
+                bg,
+                border,
+                letter,
+                icon_url,
+            }
+        })
+        .collect();
 
     rsx! {
         aside {
@@ -60,12 +158,42 @@ pub fn Sidebar(
                     style: "width: 100%; height: 100%; object-fit: cover; display: block;",
                 }
             }
-            for guild in list.iter().take(10) {
-                div {
-                    key: "{guild.id}",
-                    style: "width: 2.5rem; height: 2.5rem; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; font-size: 0.75rem;",
-                    title: "{guild.name}",
-                    "{guild.name.chars().next().unwrap_or('?')}"
+            {{
+                let dm_bg = if selected.is_none() {
+                    "rgba(0,255,245,0.25)"
+                } else {
+                    "rgba(255,255,255,0.1)"
+                };
+                let dm_border = if selected.is_none() {
+                    "rgba(0,255,245,0.4)"
+                } else {
+                    "transparent"
+                };
+                rsx! {
+                    button {
+                        class: "anim-btn",
+                        style: "
+                            width: 2.5rem; height: 2.5rem; border-radius: 50%;
+                            background: {dm_bg};
+                            border: 1px solid {dm_border};
+                            color: #d1d5db; cursor: pointer; font-size: 1rem;
+                            display: flex; align-items: center; justify-content: center;
+                        ",
+                        title: "Direct Messages",
+                        onclick: move |_| on_select_guild.call(None),
+                        "💬"
+                    }
+                }
+            }}
+            for g_ent in guild_buttons.iter() {
+                GuildButton {
+                    gid: g_ent.gid.clone(),
+                    name: g_ent.name.clone(),
+                    bg: g_ent.bg,
+                    border: g_ent.border,
+                    letter: g_ent.letter,
+                    icon_url: g_ent.icon_url.clone(),
+                    on_select_guild,
                 }
             }
             button {
