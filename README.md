@@ -1,6 +1,6 @@
 # Velocity — High-Performance Discord Client
 
-[![GitHub](https://img.shields.io/badge/GitHub-lonestill%2Fvelocity--client-blue)](https://github.com/lonestill/velocity-client)
+[![GitHub](https://img.shields.io/badge/GitHub-lonestill%2Fvelocity--client-blue)](https://github.com/lonestill/velocity-client) [![Release](https://github.com/lonestill/velocity-client/actions/workflows/release.yml/badge.svg)](https://github.com/lonestill/velocity-client/actions/workflows/release.yml)
 
 Лёгкий десктопный клиент для Discord: минимум RAM, тёмный интерфейс с неоновыми акцентами.
 
