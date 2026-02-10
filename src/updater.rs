@@ -60,7 +60,12 @@ pub fn perform_update() -> Result<(), Box<dyn std::error::Error + Send + Sync>> 
         #[cfg(windows)]
         {
             std::process::Command::new("cmd")
-                .args(["/C", "start", "", std::env::current_exe()?.to_str().unwrap_or("velocity.exe")])
+                .args([
+                    "/C",
+                    "start",
+                    "",
+                    std::env::current_exe()?.to_str().unwrap_or("velocity.exe"),
+                ])
                 .spawn()?;
             std::process::exit(0);
         }

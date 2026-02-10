@@ -13,7 +13,9 @@ fn avatar_url(user: &DiscordUser) -> Option<String> {
 }
 
 fn display_name(user: &DiscordUser) -> &str {
-    user.global_name.as_deref().unwrap_or(user.username.as_str())
+    user.global_name
+        .as_deref()
+        .unwrap_or(user.username.as_str())
 }
 
 /// anchor_right: when true (for "my" messages on the right), position card to the left of (x,y)
@@ -28,7 +30,10 @@ pub fn UserCard(
     let avatar = avatar_url(&user);
     let name = display_name(&user);
     let pos_style = if anchor_right {
-        format!("position: fixed; left: {}px; top: {}px; transform: translateX(-100%);", x, y)
+        format!(
+            "position: fixed; left: {}px; top: {}px; transform: translateX(-100%);",
+            x, y
+        )
     } else {
         format!("position: fixed; left: {}px; top: {}px;", x, y)
     };

@@ -205,9 +205,16 @@ pub fn MessageList(
         .filter(|(_, &expiry)| expiry > now)
         .filter(|(uid, _)| Some(uid.as_str()) != current_user_id.as_deref())
         .filter_map(|(uid, _)| {
-            let ch = selected.as_ref().and_then(|cid| channels.iter().find(|c| c.id == *cid))?;
+            let ch = selected
+                .as_ref()
+                .and_then(|cid| channels.iter().find(|c| c.id == *cid))?;
             let u = ch.recipients.iter().find(|u| u.id == *uid)?;
-            Some(u.global_name.as_deref().unwrap_or(u.username.as_str()).to_string())
+            Some(
+                u.global_name
+                    .as_deref()
+                    .unwrap_or(u.username.as_str())
+                    .to_string(),
+            )
         })
         .collect();
     let typing_text = if typing_names.is_empty() {

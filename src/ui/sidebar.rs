@@ -24,7 +24,9 @@ fn avatar_url(user: &DiscordUser) -> Option<String> {
 }
 
 fn display_name(user: &DiscordUser) -> &str {
-    user.global_name.as_deref().unwrap_or(user.username.as_str())
+    user.global_name
+        .as_deref()
+        .unwrap_or(user.username.as_str())
 }
 
 #[component]
