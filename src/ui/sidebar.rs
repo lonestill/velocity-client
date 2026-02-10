@@ -3,13 +3,13 @@ use dioxus::prelude::*;
 use crate::http::DiscordUser;
 use crate::state::Guild;
 
-/// Logo embedded at compile time so it always displays regardless of asset bundling.
-fn logo_data_url() -> &'static str {
-    use base64::prelude::{Engine as _, BASE64_STANDARD};
-    static LOGO_B64: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    LOGO_B64.get_or_init(|| {
-        const LOGO: &[u8] = include_bytes!("../../assets/logo.jpg");
-        format!("data:image/jpeg;base64,{}", BASE64_STANDARD.encode(LOGO))
+/// Logo as base64 data URL — works with both cargo run and dx serve
+fn logo_src() -> &'static str {
+    use base64::Engine;
+    static LOGO: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    LOGO.get_or_init(|| {
+        let bytes = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/logo.jpg"));
+        format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))
     })
 }
 
@@ -38,17 +38,26 @@ pub fn Sidebar(
 ) -> Element {
     let list = guilds();
     let user = current_user();
+    let logo = logo_src();
 
     rsx! {
         aside {
             class: "glass-panel sidebar",
             style: "width: 4rem; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; padding: 0.5rem 0; gap: 0.5rem;",
             div {
-                style: "width: 2.5rem; height: 2.5rem; border-radius: 0.75rem; overflow: hidden; display: flex; align-items: center; justify-content: center;",
+                style: "
+                    width: 2.5rem; height: 2.5rem; min-width: 2.5rem; min-height: 2.5rem;
+                    border-radius: 0.75rem; overflow: hidden;
+                    display: flex; align-items: center; justify-content: center;
+                    flex-shrink: 0;
+                    background: rgba(0,255,245,0.15);
+                    border: 1px solid rgba(0,255,245,0.3);
+                ",
+                title: "Velocity",
                 img {
-                    src: "{logo_data_url()}",
+                    src: "{logo}",
                     alt: "Velocity",
-                    style: "width: 100%; height: 100%; object-fit: cover;",
+                    style: "width: 100%; height: 100%; object-fit: cover; display: block;",
                 }
             }
             for guild in list.iter().take(10) {
@@ -135,3 +144,5 @@ pub fn Sidebar(
         }
     }
 }
+
+
