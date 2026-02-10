@@ -64,9 +64,11 @@ jobs:
 
       - name: Set version from tag
         id: version
+        shell: bash
         run: |
-          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-          echo "Version: ${GITHUB_REF#refs/tags/v}"
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
 
       - name: Pack artifact (Windows)
         if: matrix.os == 'windows-latest'
