@@ -51,13 +51,19 @@ fn MessageRow(
         .as_deref()
         .unwrap_or(msg.author_id.as_str());
     let (bubble_style, bubble_margin) = if is_mine {
-        ("max-width: 75%; margin-left: auto; margin-right: 0; padding: 0.5rem 0.75rem; \
+        (
+            "max-width: 75%; margin-left: auto; margin-right: 0; padding: 0.5rem 0.75rem; \
          border-radius: 12px 12px 4px 12px; background: rgba(0,255,245,0.15); \
-         color: #e5e7eb; font-size: 0.9375rem; line-height: 1.4;", "margin-right: 0.5rem;")
+         color: #e5e7eb; font-size: 0.9375rem; line-height: 1.4;",
+            "margin-right: 0.5rem;",
+        )
     } else {
-        ("max-width: 75%; margin-left: 0; margin-right: auto; padding: 0.5rem 0.75rem; \
+        (
+            "max-width: 75%; margin-left: 0; margin-right: auto; padding: 0.5rem 0.75rem; \
          border-radius: 12px 12px 12px 4px; background: rgba(255,255,255,0.08); \
-         color: #e5e7eb; font-size: 0.9375rem; line-height: 1.4;", "margin-left: 0.5rem;")
+         color: #e5e7eb; font-size: 0.9375rem; line-height: 1.4;",
+            "margin-left: 0.5rem;",
+        )
     };
     let time_str = format_message_time(msg.timestamp.as_deref());
     let row_style = if is_mine {
@@ -73,7 +79,10 @@ fn MessageRow(
     let avatar_el = if let Some(ref u) = author_user {
         let url = u.avatar.as_ref().map(|hash| {
             let ext = if hash.starts_with("a_") { "gif" } else { "png" };
-            format!("https://cdn.discordapp.com/avatars/{}/{}.{}", u.id, hash, ext)
+            format!(
+                "https://cdn.discordapp.com/avatars/{}/{}.{}",
+                u.id, hash, ext
+            )
         });
         let handler = on_avatar_click.clone();
         let user = u.clone();
@@ -158,8 +167,13 @@ fn resolve_author(
     if current_user.as_ref().map(|u| u.id.as_str()) == Some(msg.author_id.as_str()) {
         return current_user.clone();
     }
-    let ch = selected_id.as_ref().and_then(|id| channels.iter().find(|c| c.id == *id))?;
-    ch.recipients.iter().find(|u| u.id == msg.author_id).cloned()
+    let ch = selected_id
+        .as_ref()
+        .and_then(|id| channels.iter().find(|c| c.id == *id))?;
+    ch.recipients
+        .iter()
+        .find(|u| u.id == msg.author_id)
+        .cloned()
 }
 
 #[component]
