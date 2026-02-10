@@ -17,6 +17,12 @@
 - **Windows:** распаковать архив и запустить `velocity.exe`.
 - **Linux / macOS:** распаковать архив и запустить `./velocity` (при необходимости: `chmod +x velocity`).
 
+**Linux:** если при запуске появляется ошибка вида `cannot open shared object file: libxdo.so.3` или `libasound.so.2`, установите зависимости (пример для Ubuntu/Debian):
+
+```bash
+sudo apt install libxdo3 libasound2 libwebkit2gtk-4.1-0 libgtk-3-0 libglib2.0-0 libayatana-appindicator3-1
+```
+
 Токен Discord хранится в системном хранилище (Keyring / Credential Manager).
 
 ---

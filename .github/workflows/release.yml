@@ -44,6 +44,7 @@ jobs:
             libglib2.0-dev \
             libxdo-dev \
             libayatana-appindicator3-dev \
+            libasound2-dev \
             pkg-config \
             build-essential
 
