@@ -1,0 +1,32 @@
+[package]
+name = "velocity"
+version = "1.0.0"
+description = "High-performance Discord client"
+edition = "2021"
+rust-version = "1.70"
+license = "MIT"
+repository = "https://github.com/lonestill/velocity-client"
+homepage = "https://github.com/lonestill/velocity-client"
+authors = ["gitty","lonestill"]
+
+[features]
+default = ["desktop"]
+desktop = ["dioxus/desktop", "dioxus-desktop", "self-update"]
+self-update = ["self_update"]
+
+[dependencies]
+dioxus = { version = "0.7", features = ["desktop"] }
+dioxus-desktop = { version = "0.7", optional = true }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json"] }
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+futures-util = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+keyring = "2"
+dirs = "5"
+arboard = "3"
+base64 = "0.22"
+self_update = { version = "0.42", optional = true, features = ["archive-tar", "archive-zip", "compression-flate2", "compression-zip-deflate"] }

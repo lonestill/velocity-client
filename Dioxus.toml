@@ -1,0 +1,19 @@
+[application]
+name = "Velocity"
+default_platform = "desktop"
+
+[application.dependencies]
+
+[build]
+out_dir = "dist"
+
+[desktop]
+default_width = 1200
+default_height = 800
+min_width = 800
+min_height = 600
+
+[bundle]
+icon = ["assets/logo.jpg"]
+identifier = "cc.gitty.velocity"
+short_description = "High-performance Discord client"
