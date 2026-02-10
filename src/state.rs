@@ -62,7 +62,7 @@ pub fn logout() -> Result<(), String> {
 }
 
 /// Preferred presence status for the user.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PresenceStatus {
     #[serde(rename = "online")]
     Online,

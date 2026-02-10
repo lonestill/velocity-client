@@ -1,6 +1,6 @@
 //! Discord Gateway WebSocket: real-time message updates.
 
-use crate::state::Message;
+use crate::state::{Message, PresenceStatus};
 use dioxus::prelude::spawn;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,7 @@ struct IdentifyPayload {
     token: String,
     intents: u64,
     properties: IdentifyProperties,
+    presence: PresenceData,
 }
 
 #[derive(Serialize)]
@@ -37,6 +38,29 @@ struct IdentifyProperties {
     os: String,
     browser: String,
     device: String,
+}
+
+#[derive(Serialize)]
+struct PresenceData {
+    since: Option<u64>,
+    activities: Vec<serde_json::Value>,
+    status: String,
+    afk: bool,
+}
+
+fn presence_to_payload(status: PresenceStatus) -> PresenceData {
+    let (status_str, afk) = match status {
+        PresenceStatus::Online => ("online", false),
+        PresenceStatus::Idle => ("idle", true),
+        PresenceStatus::DoNotDisturb => ("dnd", false),
+        PresenceStatus::Invisible => ("invisible", false),
+    };
+    PresenceData {
+        since: None,
+        activities: Vec::new(),
+        status: status_str.to_string(),
+        afk,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,15 +90,17 @@ struct TypingStartData {
     timestamp: Option<i64>,
 }
 
-/// Spawn Gateway task. Sends new messages and typing events.
+/// Spawn Gateway task. Sends new messages, typing events and presence updates.
 /// Uses Dioxus spawn so it runs on the same runtime as the receiver.
 pub fn spawn_gateway(
     token: String,
     tx: mpsc::UnboundedSender<Message>,
     tx_typing: Option<mpsc::UnboundedSender<(String, String)>>,
+    presence: PresenceStatus,
+    presence_rx: mpsc::UnboundedReceiver<PresenceStatus>,
 ) {
     spawn(async move {
-        if let Err(e) = run_gateway_loop(token, tx, tx_typing).await {
+        if let Err(e) = run_gateway_loop(token, tx, tx_typing, presence, presence_rx).await {
             eprintln!("Gateway error: {}", e);
         }
     });
@@ -84,12 +110,15 @@ async fn run_gateway_loop(
     token: String,
     tx: mpsc::UnboundedSender<Message>,
     tx_typing: Option<mpsc::UnboundedSender<(String, String)>>,
+    presence: PresenceStatus,
+    mut presence_rx: mpsc::UnboundedReceiver<PresenceStatus>,
 ) -> Result<(), String> {
     let (ws_stream, _) = connect_async(GATEWAY_URL).await.map_err(|e| e.to_string())?;
     let (mut write, mut read) = ws_stream.split();
     let mut last_seq: u64 = 0;
     let mut heartbeat_interval: Option<u64> = None;
     let mut identified = false;
+    let mut current_presence = presence;
     let mut heartbeat = tokio::time::interval(tokio::time::Duration::from_millis(100));
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -129,6 +158,7 @@ async fn run_gateway_loop(
                                     browser: "Velocity".to_string(),
                                     device: "Velocity".to_string(),
                                 },
+                                presence: presence_to_payload(current_presence),
                             };
                             let payload = serde_json::json!({"op": 2, "d": identify});
                             write
@@ -166,9 +196,21 @@ async fn run_gateway_loop(
                     _ => {}
                 }
             }
+            // Heartbeat
             _ = heartbeat.tick() => {
                 if identified {
                     let payload = serde_json::json!({"op": 1, "d": last_seq});
+                    let _ = write.send(WsMessage::Text(payload.to_string())).await;
+                }
+            }
+            // Presence updates from the UI
+            Some(new_status) = presence_rx.recv() => {
+                current_presence = new_status;
+                if identified {
+                    let payload = serde_json::json!({
+                        "op": 3,
+                        "d": presence_to_payload(current_presence),
+                    });
                     let _ = write.send(WsMessage::Text(payload.to_string())).await;
                 }
             }

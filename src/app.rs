@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 use crate::gateway;
 use crate::http::{self, DiscordUser, DmChannel, Relationship};
-use crate::state::{load_settings, load_token, login, logout, Guild, Message};
+use crate::state::{load_settings, load_token, login, logout, Guild, Message, PresenceStatus};
 use crate::ui::{Layout, LoginForm, MetricsOverlay, SettingsModal, ToastContainer, WelcomeModal};
 
 #[component]
@@ -28,6 +28,8 @@ pub fn App() -> Element {
     let mut toast_counter = use_signal(|| 0usize);
     let mut unread_counts = use_signal(|| HashMap::<String, u32>::new());
     let typing_users = use_signal(|| HashMap::<String, std::collections::HashMap<String, i64>>::new());
+    // Channel to push presence updates (status) to the Gateway task.
+    let mut presence_tx = use_signal(|| None::<mpsc::UnboundedSender<PresenceStatus>>);
 
     use_effect(move || {
         let tok = token();
@@ -65,6 +67,7 @@ pub fn App() -> Element {
         let tok = token();
         if tok.is_none() {
             gateway_spawned.set(None);
+            presence_tx.set(None);
             return;
         }
         let t = tok.unwrap();
@@ -74,7 +77,11 @@ pub fn App() -> Element {
         gateway_spawned.set(Some(t.clone()));
         let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
         let (tx_typing, mut rx_typing) = mpsc::unbounded_channel::<(String, String)>();
-        gateway::spawn_gateway(t.clone(), tx, Some(tx_typing));
+        let (tx_presence, rx_presence) = mpsc::unbounded_channel::<PresenceStatus>();
+        // Store sender so Settings UI can push live status updates.
+        presence_tx.set(Some(tx_presence.clone()));
+        let initial_presence = settings().presence;
+        gateway::spawn_gateway(t.clone(), tx, Some(tx_typing), initial_presence, rx_presence);
         let mut msgs_sig = messages;
         let sel_sig = selected_channel_id;
         let mut unread_sig = unread_counts;
@@ -440,6 +447,11 @@ pub fn App() -> Element {
                         t.retain(|(i, _)| *i != id);
                         toast.set(t);
                     });
+                },
+                on_change_presence: move |status: PresenceStatus| {
+                    if let Some(tx) = presence_tx() {
+                        let _ = tx.send(status);
+                    }
                 },
             }
             MetricsOverlay { visible: settings().show_metrics_overlay }

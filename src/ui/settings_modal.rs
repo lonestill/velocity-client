@@ -34,6 +34,7 @@ pub fn SettingsModal(
     current_user: Signal<Option<DiscordUser>>,
     on_close: EventHandler<()>,
     on_show_toast: EventHandler<String>,
+    on_change_presence: EventHandler<PresenceStatus>,
 ) -> Element {
     let mut closing = use_signal(|| false);
 
@@ -313,6 +314,7 @@ pub fn SettingsModal(
                                                     s.presence = PresenceStatus::Online;
                                                     settings.set(s.clone());
                                                     let _ = save_settings(&s);
+                                                    on_change_presence.call(PresenceStatus::Online);
                                                 },
                                                 "Online"
                                             }
@@ -342,6 +344,7 @@ pub fn SettingsModal(
                                                     s.presence = PresenceStatus::Idle;
                                                     settings.set(s.clone());
                                                     let _ = save_settings(&s);
+                                                    on_change_presence.call(PresenceStatus::Idle);
                                                 },
                                                 "Idle"
                                             }
@@ -371,6 +374,7 @@ pub fn SettingsModal(
                                                     s.presence = PresenceStatus::DoNotDisturb;
                                                     settings.set(s.clone());
                                                     let _ = save_settings(&s);
+                                                    on_change_presence.call(PresenceStatus::DoNotDisturb);
                                                 },
                                                 "Do Not Disturb"
                                             }
@@ -400,6 +404,7 @@ pub fn SettingsModal(
                                                     s.presence = PresenceStatus::Invisible;
                                                     settings.set(s.clone());
                                                     let _ = save_settings(&s);
+                                                    on_change_presence.call(PresenceStatus::Invisible);
                                                 },
                                                 "Invisible"
                                             }
